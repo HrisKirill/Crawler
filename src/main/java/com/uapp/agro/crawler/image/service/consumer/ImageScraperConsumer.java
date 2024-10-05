@@ -13,15 +13,12 @@ import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
 
 @Slf4j
 public class ImageScraperConsumer implements Runnable {
     private final BlockingQueue<String> imageQueue;
     private final Set<String> visitedImages = ConcurrentHashMap.newKeySet();
     private final String compressedImageFolderPath;
-    private final Lock lock = new ReentrantLock();
     private final ImageInfoService infoService;
     private final AtomicInteger producersCount;
 
@@ -53,13 +50,8 @@ public class ImageScraperConsumer implements Runnable {
                     continue;
                 }
 
-                try {
-                    lock.lock();
-                    saveImage(image);
-                    visitedImages.add(image);
-                } finally {
-                    lock.unlock();
-                }
+                saveImage(image);
+                visitedImages.add(image);
             }
         } catch (Exception e) {
             Thread.currentThread().interrupt();

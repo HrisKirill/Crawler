@@ -6,6 +6,7 @@ import com.uapp.agro.crawler.image.service.ImageScraperService;
 import com.uapp.agro.crawler.image.service.consumer.ImageScraperConsumer;
 import com.uapp.agro.crawler.image.service.producer.ImageScraperProducer;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StopWatch;
 
@@ -14,6 +15,7 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.IntStream;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ImageScraperServiceImpl implements ImageScraperService {
@@ -48,7 +50,7 @@ public class ImageScraperServiceImpl implements ImageScraperService {
         CompletableFuture.allOf(futures)
                 .whenComplete((unused, throwable) -> {
                     stopWatch.stop();
-                    System.out.println("Execution time: " + stopWatch.getTotalTimeMillis() + " ms");
+                    log.info("Execution time: {} ms", stopWatch.getTotalTimeMillis());
                     shutdownExecutorService();
                 });
     }
@@ -59,9 +61,13 @@ public class ImageScraperServiceImpl implements ImageScraperService {
         try {
             boolean terminated = executorService.awaitTermination(30, TimeUnit.SECONDS);
             if (!terminated) {
+                log.info("Forcing shutdown...");
                 executorService.shutdownNow();
+            } else {
+                log.info("ExecutorService successfully terminated.");
             }
         } catch (InterruptedException e) {
+            log.info("Termination interrupted, forcing shutdown...");
             executorService.shutdownNow();
             Thread.currentThread().interrupt();
         }
