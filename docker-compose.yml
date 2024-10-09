@@ -14,6 +14,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
 
   app:
+    image: crawler:0.1
     build:
       context: .
       dockerfile: Dockerfile
@@ -25,11 +26,12 @@ services:
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/crawler_db
       - SPRING_DATASOURCE_USERNAME=postgres
       - SPRING_DATASOURCE_PASSWORD=postgres
-      - APPLICATION_IMAGE_PROPERTIES_FOLDER_PATH = /app/compressedFiles
+      - APPLICATION_IMAGE_PROPERTIES_FOLDER_PATH=/app/compressedFiles/
     volumes:
-      - ./logs:/app/logs
-      - ./compressedFiles:/app/compressedFiles
+      - compressed_files:/app/compressedFiles
 
 volumes:
   postgres_data:
+    name: postgres
   compressed_files:
+    name: files
