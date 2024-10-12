@@ -15,6 +15,10 @@ spring:
       - classpath:db/migration
 
 application:
+  thread-properties:
+    max-producer-count: 7
+    max-consumer-count: 3
   image-properties:
     folder-path: src/main/resources/compressedFiles/
     size-before-compressed-kb: 5
+    available-formats: png, jpeg, jpg
