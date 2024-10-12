@@ -9,7 +9,6 @@ import org.jsoup.select.Elements;
 import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentSkipListSet;
@@ -18,7 +17,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 @Slf4j
 public class ImageScraperProducer implements Runnable {
-    private static final int MAX_PRODUCERS = 7;
+    private final Integer maxProducers;
     private final Long minimalImageSizeKb;
     private final BlockingQueue<String> images;
     private final ConcurrentSkipListSet<String> urlQueue;
@@ -35,7 +34,8 @@ public class ImageScraperProducer implements Runnable {
             Set<String> visitedUrls,
             Set<String> visitedImages,
             AtomicInteger producersCount,
-            ExecutorService producerPool
+            ExecutorService producerPool,
+            Integer maxProducers
     ) {
         this.images = images;
         this.minimalImageSizeKb = minimalImageSizeKb;
@@ -45,6 +45,7 @@ public class ImageScraperProducer implements Runnable {
         this.producersCount = producersCount;
         this.producerPool = producerPool;
         this.urlQueue.add(startUrl);
+        this.maxProducers = maxProducers;
     }
 
     @Override
@@ -64,23 +65,21 @@ public class ImageScraperProducer implements Runnable {
                     spawnNewProducer();
                 }
 
-                String currentUrl = poll();
+                String currentUrl = urlQueue.pollFirst();
                 if (currentUrl == null) {
                     continue;
                 }
 
-                if (visitedUrls.contains(currentUrl)) {
-                    log.info("Skip link: {}", currentUrl);
-                    continue;
+                if (visitedUrls.add(currentUrl)) {
+                    try {
+                        log.info("Scan the page: {}", currentUrl);
+                        Document document = Jsoup.connect(currentUrl).get();
+                        findAndProcessImages(document);
+                        findAndProcessLinks(document);
+                    } catch (Exception e) {
+                        visitedUrls.remove(currentUrl);
+                    }
                 }
-
-                visitedUrls.add(currentUrl);
-
-                log.info("Scan the page: {}", currentUrl);
-
-                Document document = Jsoup.connect(currentUrl).get();
-                findAndProcessImages(document);
-                findAndProcessLinks(document);
             } catch (Exception e) {
                 log.info(e.getMessage());
             }
@@ -89,31 +88,22 @@ public class ImageScraperProducer implements Runnable {
     }
 
     private boolean isPossibleCreateNewProducer() {
-        return producersCount.get() < MAX_PRODUCERS && urlQueue.size() > 10;
+        return producersCount.get() < maxProducers && urlQueue.size() > 10;
     }
 
-    private String poll() {
-        try {
-            String first = urlQueue.first();
-            urlQueue.remove(first);
-            return first;
-        } catch (NoSuchElementException e) {
-            return null;
-        }
-    }
 
     private void spawnNewProducer() {
-        String nextUrl = poll();
+        String nextUrl = urlQueue.pollFirst();
         if (nextUrl != null) {
             producersCount.incrementAndGet();
-            producerPool.submit(new ImageScraperProducer(images, nextUrl, minimalImageSizeKb, urlQueue, visitedUrls, visitedImages, producersCount, producerPool));
+            producerPool.submit(new ImageScraperProducer(images, nextUrl, minimalImageSizeKb, urlQueue, visitedUrls, visitedImages, producersCount, producerPool, maxProducers));
             log.info("Spawned new producer for URL: {}", nextUrl);
         }
     }
 
 
     private void findAndProcessImages(Document document) {
-        final Elements images = document.select("img");
+        Elements images = document.select("img");
         for (Element img : images) {
             String srcset = img.attr("srcset");
             if (!srcset.isEmpty()) {
@@ -126,7 +116,7 @@ public class ImageScraperProducer implements Runnable {
     }
 
     private void processSrcset(String srcset) {
-        final String[] srcsetImages = srcset.split(",");
+        String[] srcsetImages = srcset.split(",");
 
         for (String srcItem : srcsetImages) {
             String[] parts = srcItem.trim().split("\\s+");
@@ -136,12 +126,11 @@ public class ImageScraperProducer implements Runnable {
     }
 
     private void processImage(String imageUrl) {
-        final Long imageSize = getImageSize(imageUrl);
+        Long imageSize = getImageSize(imageUrl);
         if (isImageSizeValid(imageSize)
-                && !visitedImages.contains(imageUrl)
-                && images.add(imageUrl)) {
+                && images.add(imageUrl)
+                && visitedImages.add(imageUrl)) {
             log.info("Adding image: {} with size: {} KB", imageUrl, imageSize);
-            visitedImages.add(imageUrl);
         }
     }
 
@@ -151,12 +140,12 @@ public class ImageScraperProducer implements Runnable {
 
     private Long getImageSize(String imageUrl) {
         try {
-            final URL url = new URL(imageUrl);
+            URL url = new URL(imageUrl);
             HttpURLConnection connection = (HttpURLConnection) url.openConnection();
             connection.setRequestMethod("HEAD");
             connection.connect();
 
-            final Long contentLengthInKb = connection.getContentLengthLong() / 1024;
+            Long contentLengthInKb = connection.getContentLengthLong() / 1024;
             connection.disconnect();
             return contentLengthInKb;
         } catch (IOException e) {
@@ -166,9 +155,9 @@ public class ImageScraperProducer implements Runnable {
     }
 
     private void findAndProcessLinks(Document document) {
-        final Elements links = document.select("section a[href]");
+        Elements links = document.select("section a[href]");
         for (Element link : links) {
-            final String nextUrl = link.absUrl("href");
+            String nextUrl = link.absUrl("href");
             if (!visitedUrls.contains(nextUrl) && urlQueue.add(nextUrl)) {
                 log.info("Added new scan link: {}", nextUrl);
             }
