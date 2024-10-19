@@ -78,9 +78,25 @@ public class ImageScraperConsumer implements Runnable {
 
     public void saveLocal(String imageUrl) {
         try {
-            BufferedImage originalImage = downloadImage(imageUrl);
-            BufferedImage compressedImage = compressImage(originalImage);
-            writeToFile(imageUrl, compressedImage);
+            String format = getImageFormat(imageUrl);
+            if (availableFormats.contains(format)) {
+                String outputFileName = getFileNameFromUrl(imageUrl);
+                BufferedImage originalImage = downloadImage(imageUrl);
+
+                try {
+                    localWriteLock.lock();
+                    File outputFile = new File(compressedImageFolderPath + outputFileName + "." + format);
+                    if (!outputFile.exists()) {
+                        BufferedImage compressedImage = compressImage(originalImage);
+                        writeToFile(format, compressedImage, outputFile);
+                        log.info("Compressed image saved to: {}", outputFile.getAbsolutePath());
+                    } else {
+                        log.info("Skip file by path: {}", outputFile.getAbsolutePath());
+                    }
+                } finally {
+                    localWriteLock.unlock();
+                }
+            }
         } catch (IOException ex) {
             log.warn(ex.getMessage());
         }
@@ -102,25 +118,8 @@ public class ImageScraperConsumer implements Runnable {
         return compressedImage;
     }
 
-    private void writeToFile(String imageUrl, BufferedImage compressedImage) throws IOException {
-        String format = getImageFormat(imageUrl);
-        if (availableFormats.contains(format)) {
-            String outputFileName = getFileNameFromUrl(imageUrl);
-            try {
-                localWriteLock.lock();
-                File outputFile = new File(compressedImageFolderPath + outputFileName + "." + format);
-                if (!outputFile.exists()) {
-                    ImageIO.write(compressedImage, format, outputFile);
-                    log.info("Compressed image saved to: {}", outputFile.getAbsolutePath());
-                } else {
-                    log.info("Skip file by path: {}", outputFile.getAbsolutePath());
-                }
-            } finally {
-                localWriteLock.unlock();
-            }
-        } else {
-            log.info("Skipped image format: {}", format);
-        }
+    private void writeToFile(String format, BufferedImage compressedImage, File outputFile) throws IOException {
+        ImageIO.write(compressedImage, format, outputFile);
     }
 
     private BufferedImage downloadImage(String imageUrl) throws IOException {
