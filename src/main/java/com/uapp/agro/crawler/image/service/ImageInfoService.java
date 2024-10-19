@@ -4,6 +4,5 @@ import com.uapp.agro.crawler.image.dto.ImageCreateDto;
 import com.uapp.agro.crawler.image.model.ImageInfo;
 
 public interface ImageInfoService {
-
-    ImageInfo save(ImageCreateDto dto);
+    ImageInfo createIfNotExists(ImageCreateDto dto);
 }
