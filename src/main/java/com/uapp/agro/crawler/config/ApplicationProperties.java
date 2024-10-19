@@ -1,5 +1,8 @@
 package com.uapp.agro.crawler.config;
 
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -14,12 +17,12 @@ public class ApplicationProperties {
     private final ThreadProperties threadProperties;
 
     public record ImageProperties(
-            String folderPath,
-            Long sizeBeforeCompressedKb,
-            List<String> availableFormats) {
+            @NotBlank String folderPath,
+            @Min(1) Long sizeBeforeCompressedKb,
+            @NotEmpty List<String> availableFormats) {
     }
 
-    public record ThreadProperties(Integer maxProducerCount,
-                                   Integer maxConsumerCount) {
+    public record ThreadProperties(@Min(1) Integer maxProducerCount,
+                                   @Min(1) Integer maxConsumerCount) {
     }
 }
