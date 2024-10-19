@@ -78,10 +78,11 @@ public class ImageScraperProducer implements Runnable {
                         findAndProcessLinks(document);
                     } catch (Exception e) {
                         visitedUrls.remove(currentUrl);
+                        log.warn("Problem with {} url processing", currentUrl);
                     }
                 }
             } catch (Exception e) {
-                log.info(e.getMessage());
+                log.warn(e.getMessage());
             }
         }
         log.info("{}: That`s all", Thread.currentThread().getName());
@@ -149,7 +150,7 @@ public class ImageScraperProducer implements Runnable {
             connection.disconnect();
             return contentLengthInKb;
         } catch (IOException e) {
-            log.info("Error getting image size: {}", e.getMessage());
+            log.warn("Error getting image size: {}", e.getMessage());
             return -1L;
         }
     }

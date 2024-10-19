@@ -2,35 +2,35 @@ package com.uapp.agro.crawler.image.service.consumer;
 
 import com.uapp.agro.crawler.image.dto.ImageCreateDto;
 import com.uapp.agro.crawler.image.service.ImageInfoService;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.io.FilenameUtils;
 
 import javax.imageio.ImageIO;
+import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 import java.net.URL;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 @Slf4j
+@RequiredArgsConstructor
 public class ImageScraperConsumer implements Runnable {
     private final BlockingQueue<String> imageQueue;
     private final Set<String> visitedImages = ConcurrentHashMap.newKeySet();
     private final String compressedImageFolderPath;
     private final ImageInfoService infoService;
     private final AtomicInteger producersCount;
+    private final List<String> availableFormats;
+    private final Lock localWriteLock = new ReentrantLock();
 
-    public ImageScraperConsumer(BlockingQueue<String> imageQueue,
-                                String compressedImageFolderPath,
-                                ImageInfoService infoService,
-                                AtomicInteger producersCount) {
-        this.imageQueue = imageQueue;
-        this.compressedImageFolderPath = compressedImageFolderPath;
-        this.infoService = infoService;
-        this.producersCount = producersCount;
-    }
 
     @Override
     public void run() {
@@ -45,17 +45,18 @@ public class ImageScraperConsumer implements Runnable {
                     continue;
                 }
 
-                if (visitedImages.contains(image)) {
-                    log.info("Skip image: {}", image);
-                    continue;
+                if (visitedImages.add(image)) {
+                    try {
+                        saveImage(image);
+                    } catch (Exception e) {
+                        visitedImages.remove(image);
+                        log.warn("Problem during {} image processing", image);
+                    }
                 }
-
-                saveImage(image);
-                visitedImages.add(image);
             }
         } catch (Exception e) {
             Thread.currentThread().interrupt();
-            log.info(e.getMessage());
+            log.warn(e.getMessage());
         }
     }
 
@@ -64,65 +65,75 @@ public class ImageScraperConsumer implements Runnable {
     }
 
     private void saveImage(String image) {
-        var imageInfo = new ImageCreateDto(image, compressedImageFolderPath);
-        log.info("Save image: {}", image);
+        ImageCreateDto imageInfo = new ImageCreateDto(image, compressedImageFolderPath);
         saveLocal(image);
         saveToDb(imageInfo);
+        log.info("Save image: {}", image);
     }
 
     private void saveToDb(ImageCreateDto dto) {
-        infoService.save(dto);
+        infoService.createIfNotExists(dto);
     }
+
 
     public void saveLocal(String imageUrl) {
         try {
-            var originalImage = downloadImage(imageUrl);
-            compressImageAndSave(imageUrl, originalImage);
+            BufferedImage originalImage = downloadImage(imageUrl);
+            BufferedImage compressedImage = compressImage(originalImage);
+            writeToFile(imageUrl, compressedImage);
         } catch (IOException ex) {
-            log.info(ex.getMessage());
+            log.warn(ex.getMessage());
         }
-    }
-
-    private void compressImageAndSave(String imageUrl, BufferedImage originalImage) throws IOException {
-        var compressedImage = compressImage(originalImage);
-        writeToFile(imageUrl, compressedImage);
     }
 
     private BufferedImage compressImage(BufferedImage originalImage) {
         int newWidth = originalImage.getWidth() / 2;
         int newHeight = originalImage.getHeight() / 2;
-        var compressedImage = new BufferedImage(newWidth, newHeight, originalImage.getType());
-
-        var g2d = compressedImage.createGraphics();
-        g2d.drawImage(originalImage, 0, 0, newWidth, newHeight, null);
-        g2d.dispose();
-
+        BufferedImage compressedImage = new BufferedImage(newWidth, newHeight, originalImage.getType());
+        Graphics2D g2d = null;
+        try {
+            g2d = compressedImage.createGraphics();
+            g2d.drawImage(originalImage, 0, 0, newWidth, newHeight, null);
+        } finally {
+            if (g2d != null) {
+                g2d.dispose();
+            }
+        }
         return compressedImage;
     }
 
     private void writeToFile(String imageUrl, BufferedImage compressedImage) throws IOException {
-        var outputFileName = getFileNameFromUrl(imageUrl);
-        var format = getImageFormat(imageUrl);
-
-        var outputFile = new File(compressedImageFolderPath + outputFileName + "." + format);
-        ImageIO.write(compressedImage, format, outputFile);
-        log.info("Compressed image saved to: {}", outputFile.getAbsolutePath());
+        String format = getImageFormat(imageUrl);
+        if (availableFormats.contains(format)) {
+            String outputFileName = getFileNameFromUrl(imageUrl);
+            try {
+                localWriteLock.lock();
+                File outputFile = new File(compressedImageFolderPath + outputFileName + "." + format);
+                if (!outputFile.exists()) {
+                    ImageIO.write(compressedImage, format, outputFile);
+                    log.info("Compressed image saved to: {}", outputFile.getAbsolutePath());
+                } else {
+                    log.info("Skip file by path: {}", outputFile.getAbsolutePath());
+                }
+            } finally {
+                localWriteLock.unlock();
+            }
+        } else {
+            log.info("Skipped image format: {}", format);
+        }
     }
 
     private BufferedImage downloadImage(String imageUrl) throws IOException {
-        var url = new URL(imageUrl);
+        URL url = new URL(imageUrl);
         return ImageIO.read(url);
     }
 
     private String getFileNameFromUrl(String imageUrl) {
-        return imageUrl.substring(imageUrl.lastIndexOf("/") + 1, imageUrl.lastIndexOf("."));
+        return FilenameUtils.getBaseName(imageUrl);
     }
 
     private String getImageFormat(String imageUrl) {
-        if (imageUrl.endsWith(".jpg") || imageUrl.endsWith(".jpeg")) {
-            return "jpg";
-        }
-        return "png";
+        return FilenameUtils.getExtension(imageUrl);
     }
 
 }
