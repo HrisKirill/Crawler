@@ -68,7 +68,6 @@ public class ImageScraperConsumer implements Runnable {
         ImageCreateDto imageInfo = new ImageCreateDto(image, compressedImageFolderPath);
         saveLocal(image);
         saveToDb(imageInfo);
-        log.info("Save image: {}", image);
     }
 
     private void saveToDb(ImageCreateDto dto) {
@@ -89,7 +88,7 @@ public class ImageScraperConsumer implements Runnable {
                     if (!outputFile.exists()) {
                         BufferedImage compressedImage = compressImage(originalImage);
                         writeToFile(format, compressedImage, outputFile);
-                        log.info("Compressed image saved to: {}", outputFile.getAbsolutePath());
+                        log.info("Compressed image {} saved to: {}", imageUrl, outputFile.getAbsolutePath());
                     } else {
                         log.info("Skip file by path: {}", outputFile.getAbsolutePath());
                     }
