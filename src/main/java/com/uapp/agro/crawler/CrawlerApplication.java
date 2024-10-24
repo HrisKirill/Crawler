@@ -1,7 +1,7 @@
 package com.uapp.agro.crawler;
 
 import com.uapp.agro.crawler.config.ApplicationProperties;
-import com.uapp.agro.crawler.image.service.ImageScraperService;
+import com.uapp.agro.crawler.scraper.service.ImageScraperService;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;

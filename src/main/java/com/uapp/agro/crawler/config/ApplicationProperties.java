@@ -7,7 +7,7 @@ import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-import java.util.List;
+import java.util.Set;
 
 @ConfigurationProperties("application")
 @RequiredArgsConstructor
@@ -17,9 +17,10 @@ public class ApplicationProperties {
     private final ThreadProperties threadProperties;
 
     public record ImageProperties(
+            @Min(1) Long minCompressedImageSize,
             @NotBlank String folderPath,
-            @Min(1) Long sizeBeforeCompressedKb,
-            @NotEmpty List<String> availableFormats) {
+            @Min(1) Long minSizeBeforeCompressedKb,
+            @NotEmpty Set<String> availableFormats) {
     }
 
     public record ThreadProperties(@Min(1) Integer maxProducerCount,

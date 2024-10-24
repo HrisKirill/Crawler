@@ -1,4 +1,4 @@
-package com.uapp.agro.crawler.image.service.producer;
+package com.uapp.agro.crawler.producer;
 
 import lombok.extern.slf4j.Slf4j;
 import org.jsoup.Jsoup;
@@ -44,8 +44,8 @@ public class ImageScraperProducer implements Runnable {
         this.visitedImages = visitedImages;
         this.producersCount = producersCount;
         this.producerPool = producerPool;
-        this.urlQueue.add(startUrl);
         this.maxProducers = maxProducers;
+        this.urlQueue.add(startUrl);
     }
 
     @Override
