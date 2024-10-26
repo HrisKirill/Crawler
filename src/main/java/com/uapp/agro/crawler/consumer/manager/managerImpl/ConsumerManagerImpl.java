@@ -19,8 +19,8 @@ public class ConsumerManagerImpl implements ConsumerManager {
     private final ScraperConfiguration config;
     private final ImageInfoService infoService;
     private final ExecutorService executorService;
-    private final Set<String> processedImages = ConcurrentHashMap.newKeySet();
     private final BlockingQueue<String> imageQueue;
+    private final Set<String> processedImages = ConcurrentHashMap.newKeySet();
 
     @Override
     public CompletableFuture<Void> startConsumers(AtomicInteger producersCount) {

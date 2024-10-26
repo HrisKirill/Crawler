@@ -11,13 +11,13 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 @RequiredArgsConstructor
 public class ProducerManagerImpl implements ProducerManager {
+    private final ScraperConfiguration config;
+    private final ExecutorService executorService;
     private final BlockingQueue<String> images = new LinkedBlockingQueue<>();
     private final Set<String> visitedUrls = ConcurrentHashMap.newKeySet();
     private final Set<String> visitedImages = ConcurrentHashMap.newKeySet();
     private final ConcurrentSkipListSet<String> urlQueue = new ConcurrentSkipListSet<>();
     private final AtomicInteger producersCount = new AtomicInteger(1);
-    private final ScraperConfiguration config;
-    private final ExecutorService executorService;
 
 
     @Override
