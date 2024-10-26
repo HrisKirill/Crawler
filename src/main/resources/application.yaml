@@ -21,5 +21,5 @@ application:
   image-properties:
     min-compressed-image-size: 30
     folder-path: src/main/resources/compressedFiles/
-    min-size-before-compressed-kb: 10
+    min-size-for-scraping-kb: 10
     available-formats: png, jpeg, jpg

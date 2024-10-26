@@ -19,7 +19,7 @@ public class ApplicationProperties {
     public record ImageProperties(
             @Min(1) Long minCompressedImageSize,
             @NotBlank String folderPath,
-            @Min(1) Long minSizeBeforeCompressedKb,
+            @Min(1) Long minSizeForScrapingKB,
             @NotEmpty Set<String> availableFormats) {
     }
 

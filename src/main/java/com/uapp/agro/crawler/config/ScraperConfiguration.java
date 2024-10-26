@@ -16,7 +16,7 @@ public class ScraperConfiguration {
     public ScraperConfiguration(ApplicationProperties properties) {
         this.maxProducerThreadCount = properties.getThreadProperties().maxProducerCount();
         this.maxConsumerThreadCount = properties.getThreadProperties().maxConsumerCount();
-        this.minImageSize = properties.getImageProperties().minSizeBeforeCompressedKb();
+        this.minImageSize = properties.getImageProperties().minSizeForScrapingKB();
         this.folderPath = properties.getImageProperties().folderPath();
         this.minCompressedSize = properties.getImageProperties().minCompressedImageSize();
         this.availableFormats = properties.getImageProperties().availableFormats();
