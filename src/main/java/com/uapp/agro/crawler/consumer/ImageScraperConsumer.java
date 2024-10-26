@@ -1,21 +1,22 @@
-package com.uapp.agro.crawler.image.service.consumer;
+package com.uapp.agro.crawler.consumer;
 
 import com.uapp.agro.crawler.image.dto.ImageCreateDto;
 import com.uapp.agro.crawler.image.service.ImageInfoService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import net.coobird.thumbnailator.Thumbnails;
 import org.apache.commons.io.FilenameUtils;
 
 import javax.imageio.ImageIO;
-import java.awt.*;
 import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.net.URL;
-import java.util.List;
 import java.util.Set;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -24,13 +25,13 @@ import java.util.concurrent.locks.ReentrantLock;
 @RequiredArgsConstructor
 public class ImageScraperConsumer implements Runnable {
     private final BlockingQueue<String> imageQueue;
-    private final Set<String> visitedImages = ConcurrentHashMap.newKeySet();
+    private final Set<String> processedImages;
     private final String compressedImageFolderPath;
     private final ImageInfoService infoService;
     private final AtomicInteger producersCount;
-    private final List<String> availableFormats;
+    private final Set<String> availableFormats;
+    private final Long minCompressedSize;
     private final Lock localWriteLock = new ReentrantLock();
-
 
     @Override
     public void run() {
@@ -45,11 +46,11 @@ public class ImageScraperConsumer implements Runnable {
                     continue;
                 }
 
-                if (visitedImages.add(image)) {
+                if (processedImages.add(image)) {
                     try {
                         saveImage(image);
                     } catch (Exception e) {
-                        visitedImages.remove(image);
+                        processedImages.remove(image);
                         log.warn("Problem during {} image processing", image);
                     }
                 }
@@ -86,9 +87,8 @@ public class ImageScraperConsumer implements Runnable {
                     localWriteLock.lock();
                     File outputFile = new File(compressedImageFolderPath + outputFileName + "." + format);
                     if (!outputFile.exists()) {
-                        BufferedImage compressedImage = compressImage(originalImage);
-                        writeToFile(format, compressedImage, outputFile);
-                        log.info("Compressed image {} saved to: {}", imageUrl, outputFile.getAbsolutePath());
+                        byte[] compressedImage = compressImage(originalImage, format);
+                        writeToFile(imageUrl, compressedImage, outputFile, format);
                     } else {
                         log.info("Skip file by path: {}", outputFile.getAbsolutePath());
                     }
@@ -101,24 +101,56 @@ public class ImageScraperConsumer implements Runnable {
         }
     }
 
-    private BufferedImage compressImage(BufferedImage originalImage) {
-        int newWidth = originalImage.getWidth() / 2;
-        int newHeight = originalImage.getHeight() / 2;
-        BufferedImage compressedImage = new BufferedImage(newWidth, newHeight, originalImage.getType());
-        Graphics2D g2d = null;
-        try {
-            g2d = compressedImage.createGraphics();
-            g2d.drawImage(originalImage, 0, 0, newWidth, newHeight, null);
-        } finally {
-            if (g2d != null) {
-                g2d.dispose();
+    private byte[] compressImage(BufferedImage originalImage, String format) throws IOException {
+        BigDecimal compressionStartQuality = new BigDecimal("1");
+        BigDecimal scaling = new BigDecimal("1");
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+
+        while (compressionStartQuality.floatValue() > 0. || scaling.floatValue() > 0.) {
+            baos.reset();
+
+            log.info("Quality: {}", compressionStartQuality);
+            log.info("Scaling: {}", scaling);
+
+            switch (format) {
+                case "jpg", "jpeg" -> Thumbnails.of(originalImage)
+                        .scale(scaling.floatValue())
+                        .outputFormat(format)
+                        .outputQuality(compressionStartQuality.floatValue())
+                        .toOutputStream(baos);
+                case "png" -> {
+                    compressionStartQuality = new BigDecimal("0");
+                    Thumbnails.of(originalImage)
+                            .outputFormat(format)
+                            .scale(scaling.floatValue())
+                            .toOutputStream(baos);
+                }
+            }
+
+            byte[] compressedData = baos.toByteArray();
+            int compressedDataLengthKB = compressedData.length / 1024;
+            if (compressedDataLengthKB <= minCompressedSize) {
+                return compressedData;
+            }
+
+            if (compressionStartQuality.floatValue() > 0.) {
+                compressionStartQuality = compressionStartQuality.subtract(BigDecimal.valueOf(0.05));
+            }
+
+            if (compressionStartQuality.floatValue() == 0 && scaling.floatValue() > 0.) {
+                scaling = scaling.subtract(BigDecimal.valueOf(0.05));
             }
         }
-        return compressedImage;
+
+        return baos.toByteArray();
     }
 
-    private void writeToFile(String format, BufferedImage compressedImage, File outputFile) throws IOException {
-        ImageIO.write(compressedImage, format, outputFile);
+    private void writeToFile(String imageUrl, byte[] compressedImage, File outputFile, String format) throws IOException {
+        try (ByteArrayInputStream bis = new ByteArrayInputStream(compressedImage)) {
+            BufferedImage bImage = ImageIO.read(bis);
+            ImageIO.write(bImage, format, outputFile);
+            log.info("Compressed image {} saved to: {}", imageUrl, outputFile.getAbsolutePath());
+        }
     }
 
     private BufferedImage downloadImage(String imageUrl) throws IOException {
