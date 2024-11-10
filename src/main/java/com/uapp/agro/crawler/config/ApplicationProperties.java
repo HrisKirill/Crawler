@@ -17,7 +17,6 @@ public class ApplicationProperties {
     private final ThreadProperties threadProperties;
 
     public record ImageProperties(
-            @Min(1) Long minCompressedImageSize,
             @NotBlank String folderPath,
             @Min(1) Long minSizeForScrapingKB,
             @NotEmpty Set<String> availableFormats) {

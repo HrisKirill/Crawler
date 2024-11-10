@@ -31,8 +31,7 @@ public class ConsumerManagerImpl implements ConsumerManager {
                                 config.getFolderPath(),
                                 infoService,
                                 producersCount,
-                                config.getAvailableFormats(),
-                                config.getMinCompressedSize()),
+                                config.getAvailableFormats()),
                         executorService
                 ))
                 .toArray(CompletableFuture[]::new);

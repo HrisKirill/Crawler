@@ -14,6 +14,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.net.URL;
 import java.util.Set;
 import java.util.concurrent.BlockingQueue;
@@ -30,7 +31,6 @@ public class ImageScraperConsumer implements Runnable {
     private final ImageInfoService infoService;
     private final AtomicInteger producersCount;
     private final Set<String> availableFormats;
-    private final Long minCompressedSize;
     private final Lock localWriteLock = new ReentrantLock();
 
     @Override
@@ -102,47 +102,58 @@ public class ImageScraperConsumer implements Runnable {
     }
 
     private byte[] compressImage(BufferedImage originalImage, String format) throws IOException {
+        BigDecimal minCompressedSize;
+        BigDecimal dividedBy = BigDecimal.valueOf(2);
+        try (ByteArrayOutputStream initialBaos = new ByteArrayOutputStream()) {
+            ImageIO.write(originalImage, format, initialBaos);
+            BigDecimal originalSizeKB = BigDecimal.valueOf(initialBaos.toByteArray().length / 1024);
+            log.info("originalSizeKB: {}", originalSizeKB);
+            minCompressedSize = originalSizeKB.divide(dividedBy, 4, RoundingMode.CEILING);
+            log.info("minCompressedSize: {}", minCompressedSize);
+        }
+
         BigDecimal compressionStartQuality = new BigDecimal("1");
         BigDecimal scaling = new BigDecimal("1");
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+            while (compressionStartQuality.floatValue() > 0. || scaling.floatValue() > 0.) {
+                baos.reset();
 
-        while (compressionStartQuality.floatValue() > 0. || scaling.floatValue() > 0.) {
-            baos.reset();
+                log.info("Quality: {}", compressionStartQuality);
+                log.info("Scaling: {}", scaling);
 
-            log.info("Quality: {}", compressionStartQuality);
-            log.info("Scaling: {}", scaling);
-
-            switch (format) {
-                case "jpg", "jpeg" -> Thumbnails.of(originalImage)
-                        .scale(scaling.floatValue())
-                        .outputFormat(format)
-                        .outputQuality(compressionStartQuality.floatValue())
-                        .toOutputStream(baos);
-                case "png" -> {
-                    compressionStartQuality = new BigDecimal("0");
-                    Thumbnails.of(originalImage)
-                            .outputFormat(format)
+                switch (format) {
+                    case "jpg", "jpeg" -> Thumbnails.of(originalImage)
                             .scale(scaling.floatValue())
+                            .outputFormat(format)
+                            .outputQuality(compressionStartQuality.floatValue())
                             .toOutputStream(baos);
+                    case "png" -> {
+                        compressionStartQuality = new BigDecimal("0");
+                        Thumbnails.of(originalImage)
+                                .outputFormat(format)
+                                .scale(scaling.floatValue())
+                                .toOutputStream(baos);
+                    }
+                }
+
+                byte[] compressedData = baos.toByteArray();
+                BigDecimal compressedDataLengthKB = BigDecimal.valueOf(compressedData.length / 1024);
+                log.info("compressedDataLengthKB: {}", compressedDataLengthKB);
+                if (minCompressedSize.compareTo(compressedDataLengthKB) >= 0) {
+                    return compressedData;
+                }
+
+                if (compressionStartQuality.floatValue() > 0.) {
+                    compressionStartQuality = compressionStartQuality.subtract(BigDecimal.valueOf(0.05));
+                }
+
+                if (compressionStartQuality.floatValue() == 0 && scaling.floatValue() > 0.) {
+                    scaling = scaling.subtract(BigDecimal.valueOf(0.05));
                 }
             }
 
-            byte[] compressedData = baos.toByteArray();
-            int compressedDataLengthKB = compressedData.length / 1024;
-            if (compressedDataLengthKB <= minCompressedSize) {
-                return compressedData;
-            }
-
-            if (compressionStartQuality.floatValue() > 0.) {
-                compressionStartQuality = compressionStartQuality.subtract(BigDecimal.valueOf(0.05));
-            }
-
-            if (compressionStartQuality.floatValue() == 0 && scaling.floatValue() > 0.) {
-                scaling = scaling.subtract(BigDecimal.valueOf(0.05));
-            }
+            return baos.toByteArray();
         }
-
-        return baos.toByteArray();
     }
 
     private void writeToFile(String imageUrl, byte[] compressedImage, File outputFile, String format) throws IOException {

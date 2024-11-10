@@ -19,7 +19,6 @@ application:
     max-producer-count: 7
     max-consumer-count: 3
   image-properties:
-    min-compressed-image-size: 30
     folder-path: src/main/resources/compressedFiles/
     min-size-for-scraping-kb: 10
     available-formats: png, jpeg, jpg
