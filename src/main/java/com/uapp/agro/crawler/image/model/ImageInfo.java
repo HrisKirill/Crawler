@@ -16,9 +16,15 @@ public class ImageInfo {
     private String originalUrl;
     @Column(nullable = false)
     private String filePath;
+    @Column(nullable = false)
+    private long originalSize;
+    @Column(nullable = false)
+    private long compressedSize;
 
-    public ImageInfo(String originalUrl, String filePath) {
+    public ImageInfo(String originalUrl, String filePath, long originalSize, long compressedSize) {
         this.originalUrl = originalUrl;
         this.filePath = filePath;
+        this.originalSize = originalSize;
+        this.compressedSize = compressedSize;
     }
 }

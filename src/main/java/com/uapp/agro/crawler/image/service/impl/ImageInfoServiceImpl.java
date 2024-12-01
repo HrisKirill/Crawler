@@ -23,7 +23,12 @@ public class ImageInfoServiceImpl implements ImageInfoService {
     public ImageInfo createIfNotExists(ImageCreateDto dto) {
         return imageInfoRepository.findByOriginalUrl(dto.getOriginalUrl())
                 .orElseGet(() -> {
-                    ImageInfo imageInfo = new ImageInfo(dto.getOriginalUrl(), dto.getFilePath());
+                    ImageInfo imageInfo = new ImageInfo(
+                            dto.getOriginalUrl(),
+                            dto.getFilePath(),
+                            dto.getOriginalSize(),
+                            dto.getCompressedSize()
+                    );
                     log.info("Save image: {}", imageInfo.getOriginalUrl());
                     return imageInfoRepository.save(imageInfo);
                 });

@@ -65,29 +65,22 @@ public class ImageScraperConsumer implements Runnable {
         return producersCount.get() == 0 && imageQueue.isEmpty();
     }
 
-    private void saveImage(String image) {
-        ImageCreateDto imageInfo = new ImageCreateDto(image, compressedImageFolderPath);
-        saveLocal(image);
-        saveToDb(imageInfo);
-    }
-
-    private void saveToDb(ImageCreateDto dto) {
-        infoService.createIfNotExists(dto);
-    }
-
-
-    public void saveLocal(String imageUrl) {
+    private void saveImage(String imageUrl) {
         try {
             String format = getImageFormat(imageUrl);
             if (availableFormats.contains(format)) {
-                String outputFileName = getFileNameFromUrl(imageUrl);
                 BufferedImage originalImage = downloadImage(imageUrl);
+                long originalSize = calculateImageSize(originalImage, format);
+
+                byte[] compressedImage = compressImage(originalImage, format);
+                long compressedSize = compressedImage.length;
+
+                String outputFileName = getFileNameFromUrl(imageUrl);
+                File outputFile = new File(compressedImageFolderPath + outputFileName + "." + format);
 
                 try {
                     localWriteLock.lock();
-                    File outputFile = new File(compressedImageFolderPath + outputFileName + "." + format);
                     if (!outputFile.exists()) {
-                        byte[] compressedImage = compressImage(originalImage, format);
                         writeToFile(imageUrl, compressedImage, outputFile, format);
                     } else {
                         log.info("Skip file by path: {}", outputFile.getAbsolutePath());
@@ -95,10 +88,28 @@ public class ImageScraperConsumer implements Runnable {
                 } finally {
                     localWriteLock.unlock();
                 }
+                saveToDb(imageUrl, originalSize, compressedSize, outputFile);
             }
-        } catch (IOException ex) {
-            log.warn(ex.getMessage());
+        } catch (Exception e) {
+            log.warn("Error saving image: {}", imageUrl, e);
         }
+    }
+
+    private long calculateImageSize(BufferedImage image, String format) throws IOException {
+        try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+            ImageIO.write(image, format, baos);
+            return baos.size();
+        }
+    }
+
+    private void saveToDb(String imageUrl, long originalSize, long compressedSize, File outputFile) {
+        ImageCreateDto imageInfo = new ImageCreateDto(
+                imageUrl,
+                outputFile.getAbsolutePath(),
+                originalSize,
+                compressedSize
+        );
+        infoService.createIfNotExists(imageInfo);
     }
 
     private byte[] compressImage(BufferedImage originalImage, String format) throws IOException {
