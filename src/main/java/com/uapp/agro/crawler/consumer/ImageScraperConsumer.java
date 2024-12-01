@@ -36,28 +36,21 @@ public class ImageScraperConsumer implements Runnable {
     @Override
     public void run() {
         try {
-            while (true) {
-                String image = imageQueue.poll();
-
-                if (image == null) {
-                    if (isQueueEmptyAndNoProducer()) {
-                        break;
-                    }
-                    continue;
-                }
-
-                if (processedImages.add(image)) {
-                    try {
-                        saveImage(image);
-                    } catch (Exception e) {
-                        processedImages.remove(image);
-                        log.warn("Problem during {} image processing", image);
-                    }
-                }
-            }
+            processImages();
         } catch (Exception e) {
             Thread.currentThread().interrupt();
             log.warn(e.getMessage());
+        }
+    }
+
+    private void processImages() {
+        while (true) {
+            String imageUrl = imageQueue.poll();
+            if (imageUrl == null && isQueueEmptyAndNoProducer()) break;
+
+            if (imageUrl != null && processedImages.add(imageUrl)) {
+                saveImage(imageUrl);
+            }
         }
     }
 
@@ -68,32 +61,42 @@ public class ImageScraperConsumer implements Runnable {
     private void saveImage(String imageUrl) {
         try {
             String format = getImageFormat(imageUrl);
-            if (availableFormats.contains(format)) {
-                BufferedImage originalImage = downloadImage(imageUrl);
-                long originalSize = calculateImageSize(originalImage, format);
-
-                byte[] compressedImage = compressImage(originalImage, format);
-                long compressedSize = compressedImage.length;
-
-                String outputFileName = getFileNameFromUrl(imageUrl);
-                File outputFile = new File(compressedImageFolderPath + outputFileName + "." + format);
-
-                try {
-                    localWriteLock.lock();
-                    if (!outputFile.exists()) {
-                        writeToFile(imageUrl, compressedImage, outputFile, format);
-                    } else {
-                        log.info("Skip file by path: {}", outputFile.getAbsolutePath());
-                    }
-                } finally {
-                    localWriteLock.unlock();
-                }
-                saveToDb(imageUrl, originalSize, compressedSize, outputFile);
+            if (!availableFormats.contains(format)) {
+                return;
             }
+
+            BufferedImage originalImage = downloadImage(imageUrl);
+            long originalSize = calculateImageSize(originalImage, format);
+
+            byte[] compressedImage = compressImage(originalImage, format);
+            long compressedSize = compressedImage.length;
+            File outputFile = createOutputFile(imageUrl, format);
+
+            saveCompressedImage(imageUrl, compressedImage, outputFile, format);
+            saveToDb(imageUrl, originalSize, compressedSize, outputFile);
         } catch (Exception e) {
             log.warn("Error saving image: {}", imageUrl, e);
         }
     }
+
+    private File createOutputFile(String imageUrl, String format) {
+        String outputFileName = getFileNameFromUrl(imageUrl) + "." + format;
+        return new File(compressedImageFolderPath + outputFileName);
+    }
+
+    private void saveCompressedImage(String imageUrl, byte[] compressedImage, File outputFile, String format) throws IOException {
+        try {
+            localWriteLock.lock();
+            if (!outputFile.exists()) {
+                writeToFile(imageUrl, compressedImage, outputFile, format);
+            } else {
+                log.info("Skip file by path: {}", outputFile.getAbsolutePath());
+            }
+        } finally {
+            localWriteLock.unlock();
+        }
+    }
+
 
     private long calculateImageSize(BufferedImage image, String format) throws IOException {
         try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
@@ -113,57 +116,55 @@ public class ImageScraperConsumer implements Runnable {
     }
 
     private byte[] compressImage(BufferedImage originalImage, String format) throws IOException {
-        BigDecimal minCompressedSize;
         BigDecimal dividedBy = BigDecimal.valueOf(2);
-        try (ByteArrayOutputStream initialBaos = new ByteArrayOutputStream()) {
-            ImageIO.write(originalImage, format, initialBaos);
-            BigDecimal originalSizeKB = BigDecimal.valueOf(initialBaos.toByteArray().length / 1024);
-            log.info("originalSizeKB: {}", originalSizeKB);
-            minCompressedSize = originalSizeKB.divide(dividedBy, 4, RoundingMode.CEILING);
-            log.info("minCompressedSize: {}", minCompressedSize);
-        }
+        BigDecimal originalSizeKB = BigDecimal.valueOf(calculateImageSize(originalImage, format))
+                .divide(BigDecimal.valueOf(1024), RoundingMode.CEILING);
+        log.info("originalSizeKB: {}", originalSizeKB);
+        BigDecimal maxCompressedSize = originalSizeKB.divide(dividedBy, 4, RoundingMode.CEILING);
+        log.info("maxCompressedSize: {}", maxCompressedSize);
 
-        BigDecimal compressionStartQuality = new BigDecimal("1");
-        BigDecimal scaling = new BigDecimal("1");
+        return compressToTargetSize(originalImage, format, maxCompressedSize);
+    }
+
+    private byte[] compressToTargetSize(BufferedImage originalImage, String format, BigDecimal targetSize) throws IOException {
+        BigDecimal quality = BigDecimal.ONE;
+        BigDecimal scaling = BigDecimal.ONE;
         try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
-            while (compressionStartQuality.floatValue() > 0. || scaling.floatValue() > 0.) {
+            while (quality.floatValue() > 0. || scaling.floatValue() > 0.) {
                 baos.reset();
 
-                log.info("Quality: {}", compressionStartQuality);
-                log.info("Scaling: {}", scaling);
-
-                switch (format) {
-                    case "jpg", "jpeg" -> Thumbnails.of(originalImage)
-                            .scale(scaling.floatValue())
-                            .outputFormat(format)
-                            .outputQuality(compressionStartQuality.floatValue())
-                            .toOutputStream(baos);
-                    case "png" -> {
-                        compressionStartQuality = new BigDecimal("0");
-                        Thumbnails.of(originalImage)
-                                .outputFormat(format)
-                                .scale(scaling.floatValue())
-                                .toOutputStream(baos);
-                    }
-                }
+                applyCompression(originalImage, format, quality, scaling, baos);
 
                 byte[] compressedData = baos.toByteArray();
                 BigDecimal compressedDataLengthKB = BigDecimal.valueOf(compressedData.length / 1024);
-                log.info("compressedDataLengthKB: {}", compressedDataLengthKB);
-                if (minCompressedSize.compareTo(compressedDataLengthKB) >= 0) {
+                if (targetSize.compareTo(compressedDataLengthKB) >= 0) {
                     return compressedData;
                 }
 
-                if (compressionStartQuality.floatValue() > 0.) {
-                    compressionStartQuality = compressionStartQuality.subtract(BigDecimal.valueOf(0.05));
+                if (quality.floatValue() > 0.) {
+                    quality = quality.subtract(BigDecimal.valueOf(0.05));
                 }
 
-                if (compressionStartQuality.floatValue() == 0 && scaling.floatValue() > 0.) {
+                if (quality.floatValue() == 0 && scaling.floatValue() > 0.) {
                     scaling = scaling.subtract(BigDecimal.valueOf(0.05));
                 }
             }
 
             return baos.toByteArray();
+        }
+    }
+
+    private void applyCompression(BufferedImage image, String format, BigDecimal quality, BigDecimal scaling, ByteArrayOutputStream baos) throws IOException {
+        switch (format) {
+            case "jpg", "jpeg" -> Thumbnails.of(image)
+                    .scale(scaling.floatValue())
+                    .outputQuality(quality.floatValue())
+                    .outputFormat(format)
+                    .toOutputStream(baos);
+            case "png" -> Thumbnails.of(image)
+                    .scale(scaling.floatValue())
+                    .outputFormat(format)
+                    .toOutputStream(baos);
         }
     }
 

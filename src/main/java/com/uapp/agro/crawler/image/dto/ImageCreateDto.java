@@ -8,6 +8,6 @@ import lombok.Data;
 public class ImageCreateDto {
     private String originalUrl;
     private String filePath;
-    private final long originalSize;
-    private final long compressedSize;
+    private long originalSize;
+    private long compressedSize;
 }
