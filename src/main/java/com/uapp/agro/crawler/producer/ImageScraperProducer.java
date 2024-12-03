@@ -25,6 +25,7 @@ public class ImageScraperProducer implements Runnable {
     private final Set<String> visitedImages;
     private final AtomicInteger producersCount;
     private final ExecutorService producerPool;
+    private final Long minUrlsGenerateProducer;
 
     public ImageScraperProducer(
             BlockingQueue<String> images,
@@ -35,7 +36,8 @@ public class ImageScraperProducer implements Runnable {
             Set<String> visitedImages,
             AtomicInteger producersCount,
             ExecutorService producerPool,
-            Integer maxProducers
+            Integer maxProducers,
+            Long minUrlsGenerateProducer
     ) {
         this.images = images;
         this.minimalImageSizeKb = minimalImageSizeKb;
@@ -45,6 +47,7 @@ public class ImageScraperProducer implements Runnable {
         this.producersCount = producersCount;
         this.producerPool = producerPool;
         this.maxProducers = maxProducers;
+        this.minUrlsGenerateProducer = minUrlsGenerateProducer;
         this.urlQueue.add(startUrl);
     }
 
@@ -53,34 +56,30 @@ public class ImageScraperProducer implements Runnable {
         try {
             findAllImages();
         } finally {
-            producersCount.decrementAndGet();
-            log.info("Producer count: {}", producersCount.get());
+            decrementProducersCount();
         }
     }
 
     public void findAllImages() {
         while (!urlQueue.isEmpty()) {
             try {
-                if (isPossibleCreateNewProducer()) {
-                    spawnNewProducer();
-                }
+                spawnNewProducerIfNeeded();
 
                 String currentUrl = urlQueue.pollFirst();
-                if (currentUrl == null) {
+                if (currentUrl == null || !visitedUrls.add(currentUrl)) {
                     continue;
                 }
 
-                if (visitedUrls.add(currentUrl)) {
-                    try {
-                        log.info("Scan the page: {}", currentUrl);
-                        Document document = Jsoup.connect(currentUrl).get();
-                        findAndProcessImages(document);
-                        findAndProcessLinks(document);
-                    } catch (Exception e) {
-                        visitedUrls.remove(currentUrl);
-                        log.warn("Problem with {} url processing", currentUrl);
-                    }
+                try {
+                    log.info("Scan the page: {}", currentUrl);
+                    Document document = Jsoup.connect(currentUrl).get();
+                    findAndProcessImages(document);
+                    findAndProcessLinks(document);
+                } catch (Exception e) {
+                    visitedUrls.remove(currentUrl);
+                    log.warn("Problem with {} url processing", currentUrl);
                 }
+
             } catch (Exception e) {
                 log.warn(e.getMessage());
             }
@@ -88,18 +87,20 @@ public class ImageScraperProducer implements Runnable {
         log.info("{}: That`s all", Thread.currentThread().getName());
     }
 
-    private boolean isPossibleCreateNewProducer() {
-        return producersCount.get() < maxProducers && urlQueue.size() > 10;
+    private void spawnNewProducerIfNeeded() {
+        if (shouldSpawnNewProducer()) {
+            String nextUrl = urlQueue.pollFirst();
+            if (nextUrl != null) {
+                producersCount.incrementAndGet();
+                producerPool.submit(new ImageScraperProducer(images, nextUrl, minimalImageSizeKb, urlQueue,
+                        visitedUrls, visitedImages, producersCount, producerPool, maxProducers, minUrlsGenerateProducer));
+                log.info("Spawned new producer for URL: {}", nextUrl);
+            }
+        }
     }
 
-
-    private void spawnNewProducer() {
-        String nextUrl = urlQueue.pollFirst();
-        if (nextUrl != null) {
-            producersCount.incrementAndGet();
-            producerPool.submit(new ImageScraperProducer(images, nextUrl, minimalImageSizeKb, urlQueue, visitedUrls, visitedImages, producersCount, producerPool, maxProducers));
-            log.info("Spawned new producer for URL: {}", nextUrl);
-        }
+    private boolean shouldSpawnNewProducer() {
+        return producersCount.get() < maxProducers && urlQueue.size() > minUrlsGenerateProducer;
     }
 
 
@@ -165,5 +166,8 @@ public class ImageScraperProducer implements Runnable {
         }
     }
 
-
+    private void decrementProducersCount() {
+        int remaining = producersCount.decrementAndGet();
+        log.info("Producer count: {}", remaining);
+    }
 }

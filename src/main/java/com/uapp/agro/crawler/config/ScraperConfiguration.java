@@ -11,6 +11,7 @@ public class ScraperConfiguration {
     private final Long minImageSize;
     private final String folderPath;
     private final Set<String> availableFormats;
+    private final Long minUrlsGenerateProducer;
 
     public ScraperConfiguration(ApplicationProperties properties) {
         this.maxProducerThreadCount = properties.getThreadProperties().maxProducerCount();
@@ -18,5 +19,6 @@ public class ScraperConfiguration {
         this.minImageSize = properties.getImageProperties().minSizeForScrapingKB();
         this.folderPath = properties.getImageProperties().folderPath();
         this.availableFormats = properties.getImageProperties().availableFormats();
+        this.minUrlsGenerateProducer = properties.getProducerProperties().minUrlsGenerateProducer();
     }
 }

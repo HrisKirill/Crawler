@@ -23,7 +23,8 @@ public class ProducerManagerImpl implements ProducerManager {
     @Override
     public void startProducer(String startUrl) {
         executorService.submit(new ImageScraperProducer(images, startUrl, config.getMinImageSize(),
-                urlQueue, visitedUrls, visitedImages, producersCount, executorService, config.getMaxProducerThreadCount()));
+                urlQueue, visitedUrls, visitedImages, producersCount, executorService,
+                config.getMaxProducerThreadCount(), config.getMinUrlsGenerateProducer()));
     }
 
     @Override

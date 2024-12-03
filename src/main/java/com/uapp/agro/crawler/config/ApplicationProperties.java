@@ -15,6 +15,7 @@ import java.util.Set;
 public class ApplicationProperties {
     private final ImageProperties imageProperties;
     private final ThreadProperties threadProperties;
+    private final ProducerProperties producerProperties;
 
     public record ImageProperties(
             @NotBlank String folderPath,
@@ -24,5 +25,10 @@ public class ApplicationProperties {
 
     public record ThreadProperties(@Min(1) Integer maxProducerCount,
                                    @Min(1) Integer maxConsumerCount) {
+    }
+
+    public record ProducerProperties(
+            @Min(1) Long minUrlsGenerateProducer
+    ) {
     }
 }
