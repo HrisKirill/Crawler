@@ -46,7 +46,9 @@ public class ImageScraperConsumer implements Runnable {
     private void processImages() {
         while (true) {
             String imageUrl = imageQueue.poll();
-            if (imageUrl == null && isQueueEmptyAndNoProducer()) break;
+            if (imageUrl == null && isQueueEmptyAndNoProducer()) {
+                break;
+            }
 
             if (imageUrl != null && processedImages.add(imageUrl)) {
                 saveImage(imageUrl);
