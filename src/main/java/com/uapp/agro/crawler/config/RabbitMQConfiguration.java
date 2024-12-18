@@ -6,25 +6,59 @@ import org.springframework.context.annotation.Configuration;
 
 @Configuration
 public class RabbitMQConfiguration {
-    public static final String IMAGE_PROCESS_QUEUE = "process-image";
-    public static final String IMAGE_EXCHANGE = "image-exchange";
-    public static final String ROUTING_KEY = "routing-key";
+    public static final String IMAGES_QUEUE = "IMAGES.QUEUE";
+    public static final String DLQ_IMAGES_QUEUE = "DLQ." + IMAGES_QUEUE;
+    public static final String PARKING_LOT_IMAGES_QUEUE = "PARKING.LOT" + IMAGES_QUEUE;
+    public static final String IMAGES_EXCHANGE = "IMAGES.EXCHANGE";
+    public static final String PARKING_LOT_IMAGES_EXCHANGE = "PARKING.LOT" + IMAGES_EXCHANGE;
+    public static final String DLX_IMAGES_EXCHANGE = "DLX." + IMAGES_EXCHANGE;
+    public static final String ROUTING_KEY_IMAGES_QUEUE = "ROUTING_KEY_IMAGES_QUEUE";
+
 
     @Bean
-    public Queue queue() {
-        return new Queue(IMAGE_PROCESS_QUEUE, false);
+    Queue messagesQueue() {
+        return QueueBuilder.durable(IMAGES_QUEUE)
+                .withArgument("x-dead-letter-exchange", DLX_IMAGES_EXCHANGE)
+                .build();
     }
 
     @Bean
-    public Exchange exchange() {
-        return new DirectExchange(IMAGE_EXCHANGE);
+    DirectExchange messagesExchange() {
+        return new DirectExchange(IMAGES_EXCHANGE);
     }
 
     @Bean
-    public Binding binding(Queue queue, Exchange exchange) {
-        return BindingBuilder.bind(queue)
-                .to(exchange)
-                .with(ROUTING_KEY)
-                .noargs();
+    Binding bindingMessages() {
+        return BindingBuilder.bind(messagesQueue()).to(messagesExchange()).with(ROUTING_KEY_IMAGES_QUEUE);
+    }
+
+    @Bean
+    Queue deadLetterQueue() {
+        return QueueBuilder.durable(DLQ_IMAGES_QUEUE).build();
+    }
+
+    @Bean
+    FanoutExchange deadLetterExchange() {
+        return new FanoutExchange(DLX_IMAGES_EXCHANGE);
+    }
+
+    @Bean
+    Binding deadLetterBinding() {
+        return BindingBuilder.bind(deadLetterQueue()).to(deadLetterExchange());
+    }
+
+    @Bean
+    FanoutExchange parkingLotExchange() {
+        return new FanoutExchange(PARKING_LOT_IMAGES_EXCHANGE);
+    }
+
+    @Bean
+    Queue parkingLotQueue() {
+        return QueueBuilder.durable(PARKING_LOT_IMAGES_QUEUE).build();
+    }
+
+    @Bean
+    Binding parkingLotBinding() {
+        return BindingBuilder.bind(parkingLotQueue()).to(parkingLotExchange());
     }
 }

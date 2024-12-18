@@ -5,41 +5,31 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 
 import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.Set;
-import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static com.uapp.agro.crawler.config.RabbitMQConfiguration.*;
+
 @Slf4j
 public class ImageScraperProducer implements Runnable {
+    private final RabbitTemplate rabbitTemplate;
     private final Integer maxProducers;
     private final Long minimalImageSizeKb;
-    private final BlockingQueue<String> images;
     private final ConcurrentSkipListSet<String> urlQueue;
-    private final Set<String> visitedUrls;
-    private final Set<String> visitedImages;
+    private final Set<String> visitedUrls, visitedImages;
     private final AtomicInteger producersCount;
     private final ExecutorService producerPool;
     private final Long minUrlsGenerateProducer;
 
-    public ImageScraperProducer(
-            BlockingQueue<String> images,
-            String startUrl,
-            Long minimalImageSizeKb,
-            ConcurrentSkipListSet<String> urlQueue,
-            Set<String> visitedUrls,
-            Set<String> visitedImages,
-            AtomicInteger producersCount,
-            ExecutorService producerPool,
-            Integer maxProducers,
-            Long minUrlsGenerateProducer
-    ) {
-        this.images = images;
+    public ImageScraperProducer(String startUrl, RabbitTemplate rabbitTemplate, Long minimalImageSizeKb, ConcurrentSkipListSet<String> urlQueue, Set<String> visitedUrls, Set<String> visitedImages, AtomicInteger producersCount, ExecutorService producerPool, Integer maxProducers, Long minUrlsGenerateProducer) {
+        this.rabbitTemplate = rabbitTemplate;
         this.minimalImageSizeKb = minimalImageSizeKb;
         this.urlQueue = urlQueue;
         this.visitedUrls = visitedUrls;
@@ -64,7 +54,6 @@ public class ImageScraperProducer implements Runnable {
         while (!urlQueue.isEmpty()) {
             try {
                 spawnNewProducerIfNeeded();
-
                 String currentUrl = urlQueue.pollFirst();
                 if (currentUrl == null || !visitedUrls.add(currentUrl)) {
                     continue;
@@ -92,8 +81,7 @@ public class ImageScraperProducer implements Runnable {
             String nextUrl = urlQueue.pollFirst();
             if (nextUrl != null) {
                 producersCount.incrementAndGet();
-                producerPool.submit(new ImageScraperProducer(images, nextUrl, minimalImageSizeKb, urlQueue,
-                        visitedUrls, visitedImages, producersCount, producerPool, maxProducers, minUrlsGenerateProducer));
+                producerPool.submit(new ImageScraperProducer(nextUrl, rabbitTemplate, minimalImageSizeKb, urlQueue, visitedUrls, visitedImages, producersCount, producerPool, maxProducers, minUrlsGenerateProducer));
                 log.info("Spawned new producer for URL: {}", nextUrl);
             }
         }
@@ -130,8 +118,8 @@ public class ImageScraperProducer implements Runnable {
     private void processImage(String imageUrl) {
         Long imageSize = getImageSize(imageUrl);
         if (isImageSizeValid(imageSize)
-                && images.add(imageUrl)
                 && visitedImages.add(imageUrl)) {
+            rabbitTemplate.convertAndSend(IMAGES_EXCHANGE, ROUTING_KEY_IMAGES_QUEUE, imageUrl);
             log.info("Adding image: {} with size: {} KB", imageUrl, imageSize);
         }
     }

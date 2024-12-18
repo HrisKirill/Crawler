@@ -1,10 +1,12 @@
 package com.uapp.agro.crawler.config;
 
 import lombok.Data;
+import org.springframework.stereotype.Component;
 
 import java.util.Set;
 
 @Data
+@Component
 public class ScraperConfiguration {
     private final Integer maxProducerThreadCount;
     private final Integer maxConsumerThreadCount;

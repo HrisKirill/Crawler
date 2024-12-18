@@ -18,6 +18,10 @@ spring:
     port: 5672
     username: username
     password: password
+    listener:
+      simple:
+        default-requeue-rejected: false
+
 application:
   producer-properties:
     min-urls-generate-producer: 10
